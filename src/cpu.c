@@ -1,8 +1,8 @@
 #include "cpu.h"
-#include <stdio.h>
+#include "utils.h"
 
 static void NOP(CPU *cpu, uint8_t *memory) {
-    printf("NOP executed\n");
+    p_instr("NOP executed");
 }
 
 InstructionFP opcodeTable[256] = {
@@ -18,7 +18,7 @@ void initCPU(CPU *cpu) {
     cpu->ime = 1;  // Enable interrupts by default
     cpu->halted = 0;
 
-    printf("CPU Initialized\n");
+    debug("CPU Initialized");
 }
 
 void executeNextInstruction(CPU *cpu, uint8_t *memory) {
@@ -28,6 +28,6 @@ void executeNextInstruction(CPU *cpu, uint8_t *memory) {
     if (instr) {
         instr(cpu, memory);
     } else {
-        printf("Unknown opcode: 0x%02X\n", opcode);
+        error("Unknown opcode: 0x%02X", opcode);
     }
 }
