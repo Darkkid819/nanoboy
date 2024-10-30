@@ -12,6 +12,8 @@ typedef struct {
     uint8_t halted;  // Halt state
 } CPU;
 
+typedef void (*InstructionFP)(CPU *cpu, uint8_t *memory);
+
 void initCPU(CPU *cpu);
 void executeNextInstruction(CPU *cpu, uint8_t *memory); 
 

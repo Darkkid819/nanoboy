@@ -1,4 +1,4 @@
-TARGET_EXEC := gameboy
+TARGET_EXEC := nanoboy
 
 BUILD_DIR := ./build
 SRC_DIRS := ./src
@@ -14,6 +14,11 @@ INC_FLAGS := $(addprefix -I,$(INC_DIRS))
 
 CPPFLAGS := $(INC_FLAGS) -MMD -MP
 
+CFLAGS := -Wall -Wextra -g
+LDFLAGS :=
+
+all: $(BUILD_DIR)/$(TARGET_EXEC)
+
 $(BUILD_DIR)/$(TARGET_EXEC): $(OBJS)
 	$(CXX) $(OBJS) -o $@ $(LDFLAGS)
 
@@ -25,6 +30,8 @@ $(BUILD_DIR)/%.cpp.o: %.cpp
 	mkdir -p $(dir $@)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
+debug: CFLAGS += -DDEBUG
+debug: all
 
 .PHONY: clean
 clean:

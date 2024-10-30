@@ -2,8 +2,10 @@
 #include "cpu.h"
 #include "memory.h"
 #include "config.h"
+#include "utils.h"
 
 int main() {
+    error("hello from error");
     CPU cpu;
     Memory memory;
 

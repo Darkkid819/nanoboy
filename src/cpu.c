@@ -1,6 +1,14 @@
 #include "cpu.h"
 #include <stdio.h>
 
+static void NOP(CPU *cpu, uint8_t *memory) {
+    printf("NOP executed\n");
+}
+
+InstructionFP opcodeTable[256] = {
+    [0x00] = NOP,
+};
+
 void initCPU(CPU *cpu) {
     cpu->a = cpu->f = 0;
     cpu->b = cpu->c = cpu->d = cpu->e = 0;
@@ -15,10 +23,10 @@ void initCPU(CPU *cpu) {
 
 void executeNextInstruction(CPU *cpu, uint8_t *memory) {
     uint8_t opcode = memory[cpu->pc++];
+    InstructionFP instr = opcodeTable[opcode];
     
-    if (opcode == 0x00) {
-        printf("NOP executed\n");
-        return;
+    if (instr) {
+        instr(cpu, memory);
     } else {
         printf("Unknown opcode: 0x%02X\n", opcode);
     }
