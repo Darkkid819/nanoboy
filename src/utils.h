@@ -36,4 +36,15 @@
     fprintf(stderr, KGRN "SUCCESS: " KNRM S NL, ##__VA_ARGS__);                \
   } while (0)
 
+#define USAGE(program_name, retcode) do { \
+    fprintf(stderr, "USAGE: %s %s\n", program_name, \
+    "[-h|--help] -s|--step <cycles> | -r|--run <ROM file>\n" \
+    "   -h, --help    Show this help message.\n" \
+    "   -s, --step    Run the emulator for the specified number of cycles.\n" \
+    "                 Usage: -s <cycles> <ROM file>\n" \
+    "   -r, --run     Run the emulator in an infinite loop.\n" \
+    "                 Usage: -r <ROM file>\n"); \
+    exit(retcode); \
+} while (0)
+
 #endif
