@@ -37,8 +37,9 @@ static void NOP(CPU *cpu, uint8_t *memory, Register reg1, Register reg2) {
     p_instr("NOP executed");
 }
 
-static void LD(CPU *cpu, uint8_t *memory, Register dest, Register src) {
-    (void)memory; 
+// 8bit load/store/move instructions
+static void LD_r_r(CPU *cpu, uint8_t *memory, Register dest, Register src) {
+    (void)memory;  // Not used for register-to-register load
     uint8_t *rDest = getRegister(cpu, dest);
     uint8_t *rSrc = getRegister(cpu, src);
     if (rDest && rSrc) {
@@ -47,32 +48,53 @@ static void LD(CPU *cpu, uint8_t *memory, Register dest, Register src) {
     }
 }
 
-static void LD_rr_d16(CPU *cpu, uint8_t *memory, Register high, Register low) {
-    uint8_t *rHigh = getRegister(cpu, high);
-    uint8_t *rLow = getRegister(cpu, low);
-    if (rHigh && rLow) {
-        *rLow = memory[cpu->pc++];
-        *rHigh = memory[cpu->pc++];
-        p_instr("LD %s%s <- 0x%02X%02X", getRegisterName(high), getRegisterName(low), *rHigh, *rLow);
+static void LD_r_d8(CPU *cpu, uint8_t *memory, Register dest, Register unused) {
+    (void)unused;  // Not used
+    uint8_t *rDest = getRegister(cpu, dest);
+    if (rDest) {
+        *rDest = memory[cpu->pc++];
+        p_instr("LD %s <- 0x%02X", getRegisterName(dest), *rDest);
     }
 }
 
-static void INC(CPU *cpu, uint8_t *memory, Register reg, Register unused) {
-    (void)memory; (void)unused;  
-    uint8_t *r = getRegister(cpu, reg);
-    if (r) {
-        (*r)++;
-        cpu->f = (*r == 0) ? (cpu->f | 0x80) : (cpu->f & ~0x80);  // Set Zero flag if result is 0
-        p_instr("INC %s -> 0x%02X", getRegisterName(reg), *r);
-    }
+static void LD_A_from_HL(CPU *cpu, uint8_t *memory, Register unused1, Register unused2) {
+    (void)unused1; (void)unused2;  // Not used
+    cpu->a = memory[(cpu->h << 8) | cpu->l];
+    p_instr("LD A <- (HL): 0x%02X", cpu->a);
 }
+
+static void LD_HL_from_A(CPU *cpu, uint8_t *memory, Register unused1, Register unused2) {
+    (void)unused1; (void)unused2;  // Not used
+    memory[(cpu->h << 8) | cpu->l] = cpu->a;
+    p_instr("LD (HL) <- A: 0x%02X", cpu->a);
+}
+
+/*static void LD_rr_d16(CPU *cpu, uint8_t *memory, Register high, Register low) {*/
+/*    uint8_t *rHigh = getRegister(cpu, high);*/
+/*    uint8_t *rLow = getRegister(cpu, low);*/
+/*    if (rHigh && rLow) {*/
+/*        *rLow = memory[cpu->pc++];*/
+/*        *rHigh = memory[cpu->pc++];*/
+/*        p_instr("LD %s%s <- 0x%02X%02X", getRegisterName(high), getRegisterName(low), *rHigh, *rLow);*/
+/*    }*/
+/*}*/
+
+/*static void INC(CPU *cpu, uint8_t *memory, Register reg, Register unused) {*/
+/*    (void)memory; (void)unused;  */
+/*    uint8_t *r = getRegister(cpu, reg);*/
+/*    if (r) {*/
+/*        (*r)++;*/
+/*        cpu->f = (*r == 0) ? (cpu->f | 0x80) : (cpu->f & ~0x80);  // Set Zero flag if result is 0*/
+/*        p_instr("INC %s -> 0x%02X", getRegisterName(reg), *r);*/
+/*    }*/
+/*}*/
 
 // Opcode table with metadata
 Instruction opcodeTable[256] = {
     [0x00] = { NOP, REG_NONE, REG_NONE },               // NOP
-    [0x01] = { LD_rr_d16, REG_B, REG_C },               // LD BC, d16
-    [0x04] = { INC, REG_B, REG_NONE },                  // INC B
-    [0x78] = { LD, REG_A, REG_B },                      // LD A, B
+
+    // 8bit load/store/move instructions
+
 };
 
 void initCPU(CPU *cpu) {
@@ -83,6 +105,7 @@ void initCPU(CPU *cpu) {
     cpu->pc = 0x0100;  // Program counter starts after BIOS
     cpu->ime = 1;      // Enable interrupts by default
     cpu->halted = 0;
+    initTimer(&cpu->timer);
 
     debug("CPU Initialized");
 }
@@ -93,6 +116,7 @@ void executeNextInstruction(CPU *cpu, uint8_t *memory) {
 
     if (instr.execute) {
         instr.execute(cpu, memory, instr.reg1, instr.reg2);
+        addCycles(&cpu->timer, instr.cycles);
     } else {
         error("Unknown opcode: 0x%02X", opcode);
     }
