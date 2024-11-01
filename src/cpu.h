@@ -8,7 +8,7 @@
 struct CPU;
 
 typedef enum {
-    REG_B, REG_C, REG_D, REG_E, REG_H, REG_L, REG_A, REG_NONE
+    REG_B, REG_C, REG_D, REG_E, REG_H, REG_L, REG_A, REG_F, REG_NONE
 } Register;
 
 typedef struct Instruction {
