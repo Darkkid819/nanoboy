@@ -2,6 +2,7 @@
 #define CPU_H
 
 #include <stdint.h>
+#include "memory.h"
 #include "timer.h"
 
 struct CPU;
@@ -11,7 +12,7 @@ typedef enum {
 } Register;
 
 typedef struct Instruction {
-    void (*execute)(struct CPU *cpu, uint8_t *memory, Register reg1, Register reg2);
+    void (*execute)(struct CPU *cpu, Memory *memory, Register reg1, Register reg2);
     Register reg1;
     Register reg2;
     uint8_t cycles;
@@ -27,6 +28,6 @@ typedef struct CPU {
 } CPU;
 
 void initCPU(CPU *cpu);
-void executeNextInstruction(CPU *cpu, uint8_t *memory);
+void executeNextInstruction(CPU *cpu, Memory *memory);
 
 #endif

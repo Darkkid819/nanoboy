@@ -17,7 +17,7 @@ int loadGameBoyROM(GameBoy *gameBoy, const char *filePath) {
 void runGameBoy(GameBoy *gameBoy) {
     while (gameBoy->running) {
         if (!gameBoy->cpu.halted) {
-            executeNextInstruction(&gameBoy->cpu, gameBoy->memory.data);
+            executeNextInstruction(&gameBoy->cpu, &gameBoy->memory);
         } else {
             debug("CPU halted, stopping execution");
             gameBoy->running = false;
@@ -28,7 +28,7 @@ void runGameBoy(GameBoy *gameBoy) {
 void stepGameBoy(GameBoy *gameBoy, int cycles) {
     for (int i = 0; i < cycles; i++) {
         if (!gameBoy->cpu.halted) {
-            executeNextInstruction(&gameBoy->cpu, gameBoy->memory.data);
+            executeNextInstruction(&gameBoy->cpu, &gameBoy->memory);
         } else {
             debug("CPU halted, stopping execution");
             break;

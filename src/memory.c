@@ -12,6 +12,10 @@ uint8_t readByte(Memory *memory, uint16_t address) {
     return memory->data[address];
 }
 
+uint16_t readWord(Memory *memory, uint16_t address) {
+    return memory->data[address] | (memory->data[address + 1] << 8);
+}
+
 void writeByte(Memory *memory, uint16_t address, uint8_t value) {
     memory->data[address] = value;
 }

@@ -1,9 +1,7 @@
 #include "cpu.h"
 #include "utils.h"
 
-static uint16_t read16(uint8_t *memory, uint16_t address) {
-    return memory[address] | (memory[address + 1] << 8);
-}
+
 
 static uint8_t* getRegister(CPU *cpu, Register reg) {
     switch (reg) {
@@ -32,14 +30,14 @@ static const char* getRegisterName(Register reg) {
     }
 }
 
-static void NOP(CPU *cpu, uint8_t *memory, Register reg1, Register reg2) {
+static void NOP(CPU *cpu, Memory *memory, Register reg1, Register reg2) {
     (void)cpu; (void)memory; (void)reg1; (void)reg2;
     p_instr("NOP executed");
 }
 
 // 8bit load/store/move instructions
-static void LD_r_r(CPU *cpu, uint8_t *memory, Register dest, Register src) {
-    (void)memory;  
+static void LD_r_r(CPU *cpu, Memory *memory, Register dest, Register src) {
+    (void)memory;
     uint8_t *rDest = getRegister(cpu, dest);
     uint8_t *rSrc = getRegister(cpu, src);
     if (rDest && rSrc) {
@@ -48,63 +46,63 @@ static void LD_r_r(CPU *cpu, uint8_t *memory, Register dest, Register src) {
     }
 }
 
-static void LD_r_d8(CPU *cpu, uint8_t *memory, Register dest, Register src) {
-    (void)src;  
+static void LD_r_d8(CPU *cpu, Memory *memory, Register dest, Register src) {
+    (void)src;
     uint8_t *rDest = getRegister(cpu, dest);
     if (rDest) {
-        *rDest = memory[cpu->pc++];
+        *rDest = readByte(memory, cpu->pc++);
         p_instr("LD %s <- d8: 0x%02X", getRegisterName(dest), *rDest);
     }
 }
 
-static void LD_A_m(CPU *cpu, uint8_t *memory, Register highReg, Register lowReg) {
+static void LD_A_m(CPU *cpu, Memory *memory, Register highReg, Register lowReg) {
     uint16_t address = (*getRegister(cpu, highReg) << 8) | *getRegister(cpu, lowReg);
-    cpu->a = memory[address];
+    cpu->a = readByte(memory, address);
     p_instr("LD A <- (0x%04X): 0x%02X", address, cpu->a);
 }
 
-static void LD_m_A(CPU *cpu, uint8_t *memory, Register highReg, Register lowReg) {
+static void LD_m_A(CPU *cpu, Memory *memory, Register highReg, Register lowReg) {
     uint16_t address = (*getRegister(cpu, highReg) << 8) | *getRegister(cpu, lowReg);
-    memory[address] = cpu->a;
+    writeByte(memory, address, cpu->a);
     p_instr("LD (0x%04X) <- A: 0x%02X", address, cpu->a);
 }
 
-static void LD_m_d8(CPU *cpu, uint8_t *memory, Register highReg, Register lowReg) {
+static void LD_m_d8(CPU *cpu, Memory *memory, Register highReg, Register lowReg) {
     uint16_t address = (*getRegister(cpu, highReg) << 8) | *getRegister(cpu, lowReg);
-    memory[address] = memory[cpu->pc++];
-    p_instr("LD (0x%04X) <- d8: 0x%02X", address, memory[address]);
+    uint8_t value = readByte(memory, cpu->pc++);
+    writeByte(memory, address, value);
+    p_instr("LD (0x%04X) <- d8: 0x%02X", address, value);
 }
 
-static void LDH_A_m(CPU *cpu, uint8_t *memory, Register unused1, Register unused2) {
+static void LDH_A_m(CPU *cpu, Memory *memory, Register unused1, Register unused2) {
     (void)unused1; (void)unused2;
-    uint16_t address = 0xFF00 | memory[cpu->pc++];
-    cpu->a = memory[address];
+    uint16_t address = 0xFF00 | readByte(memory, cpu->pc++);
+    cpu->a = readByte(memory, address);
     p_instr("LD A <- (0x%04X): 0x%02X", address, cpu->a);
 }
 
-static void LDH_m_A(CPU *cpu, uint8_t *memory, Register unused1, Register unused2) {
+static void LDH_m_A(CPU *cpu, Memory *memory, Register unused1, Register unused2) {
     (void)unused1; (void)unused2;
-    uint16_t address = 0xFF00 | memory[cpu->pc++];
-    memory[address] = cpu->a;
+    uint16_t address = 0xFF00 | readByte(memory, cpu->pc++);
+    writeByte(memory, address, cpu->a);
     p_instr("LD (0x%04X) <- A: 0x%02X", address, cpu->a);
 }
 
-static void LD_A_a16(CPU *cpu, uint8_t *memory, Register unused1, Register unused2) {
+static void LD_A_a16(CPU *cpu, Memory *memory, Register unused1, Register unused2) {
     (void)unused1; (void)unused2;
-    uint16_t address = read16(memory, cpu->pc);
+    uint16_t address = readWord(memory, cpu->pc);
     cpu->pc += 2;
-    cpu->a = memory[address];
+    cpu->a = readByte(memory, address);
     p_instr("LD A <- (0x%04X): 0x%02X", address, cpu->a);
 }
 
-static void LD_a16_A(CPU *cpu, uint8_t *memory, Register unused1, Register unused2) {
+static void LD_a16_A(CPU *cpu, Memory *memory, Register unused1, Register unused2) {
     (void)unused1; (void)unused2;
-    uint16_t address = read16(memory, cpu->pc);
+    uint16_t address = readWord(memory, cpu->pc);
     cpu->pc += 2;
-    memory[address] = cpu->a;
+    writeByte(memory, address, cpu->a);
     p_instr("LD (0x%04X) <- A: 0x%02X", address, cpu->a);
 }
-
 
 /*static void LD_rr_d16(CPU *cpu, uint8_t *memory, Register high, Register low) {*/
 /*    uint8_t *rHigh = getRegister(cpu, high);*/
@@ -232,8 +230,8 @@ void initCPU(CPU *cpu) {
     debug("CPU Initialized");
 }
 
-void executeNextInstruction(CPU *cpu, uint8_t *memory) {
-    uint8_t opcode = memory[cpu->pc++];
+void executeNextInstruction(CPU *cpu, Memory *memory) {
+    uint8_t opcode = readByte(memory, cpu->pc++);
     Instruction instr = opcodeTable[opcode];
 
     if (instr.execute) {
