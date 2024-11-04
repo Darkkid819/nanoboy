@@ -2,7 +2,6 @@
 #include "utils.h"
 
 
-
 static uint8_t* getRegister(CPU *cpu, Register reg) {
     switch (reg) {
         case REG_B: return &cpu->b;
@@ -170,6 +169,255 @@ static void LD_HL_SP_plus_s8(CPU *cpu, Memory *memory, Register unused1, Registe
     p_instr("LD HL <- SP + s8: SP=0x%04X, s8=%d, Result=0x%04X", cpu->sp, offset, result);
 }
 
+// 8bit arithmetic/logical instructions
+static void setFlagsInc(CPU *cpu, uint8_t result) {
+    // Z flag
+    cpu->f = (result == 0) ? (cpu->f | 0x80) : (cpu->f & ~0x80);
+    // N flag is cleared
+    cpu->f &= ~0x40;
+    // H flag is set if there was a carry from bit 3
+    cpu->f = (result & 0x0F) == 0 ? (cpu->f | 0x20) : (cpu->f & ~0x20);
+    // C flag is unaffected
+}
+
+static void setFlagsDec(CPU *cpu, uint8_t result) {
+    // Z flag
+    cpu->f = (result == 0) ? (cpu->f | 0x80) : (cpu->f & ~0x80);
+    // N flag is set
+    cpu->f |= 0x40;
+    // H flag is set if there was a borrow from bit 4
+    cpu->f = (result & 0x0F) == 0x0F ? (cpu->f | 0x20) : (cpu->f & ~0x20);
+    // C flag is unaffected
+}
+
+static void INC_r(CPU *cpu, Memory *memory, Register reg, Register unused) {
+    (void)memory; (void)unused;
+    uint8_t *r = getRegister(cpu, reg);
+    if (r) {
+        (*r)++;
+        setFlagsInc(cpu, *r);
+        p_instr("INC %s -> 0x%02X", getRegisterName(reg), *r);
+    }
+}
+
+static void DEC_r(CPU *cpu, Memory *memory, Register reg, Register unused) {
+    (void)memory; (void)unused;
+    uint8_t *r = getRegister(cpu, reg);
+    if (r) {
+        (*r)--;
+        setFlagsDec(cpu, *r);
+        p_instr("DEC %s -> 0x%02X", getRegisterName(reg), *r);
+    }
+}
+
+static void INC_mHL(CPU *cpu, Memory *memory, Register unused1, Register unused2) {
+    (void)unused1; (void)unused2;
+    uint16_t address = (cpu->h << 8) | cpu->l;
+    uint8_t value = readByte(memory, address) + 1;
+    writeByte(memory, address, value);
+    setFlagsInc(cpu, value);
+    p_instr("INC (HL) -> 0x%02X at 0x%04X", value, address);
+}
+
+static void DEC_mHL(CPU *cpu, Memory *memory, Register unused1, Register unused2) {
+    (void)unused1; (void)unused2;
+    uint16_t address = (cpu->h << 8) | cpu->l;
+    uint8_t value = readByte(memory, address) - 1;
+    writeByte(memory, address, value);
+    setFlagsDec(cpu, value);
+    p_instr("DEC (HL) -> 0x%02X at 0x%04X", value, address);
+}
+
+static void DAA(CPU *cpu, Memory *memory, Register unused1, Register unused2) {
+    (void)memory; (void)unused1; (void)unused2;
+
+    uint8_t adjust = 0;
+    uint8_t carryFlag = cpu->f & 0x10; // CY flag
+    uint8_t halfCarryFlag = cpu->f & 0x20; // H flag
+
+    if (halfCarryFlag || ((cpu->a & 0x0F) > 9)) {
+        adjust |= 0x06;
+    }
+    if (carryFlag || (cpu->a > 0x99)) {
+        adjust |= 0x60;
+        cpu->f |= 0x10; // Set CY
+    } else {
+        cpu->f &= ~0x10; // Clear CY
+    }
+
+    cpu->a = cpu->f & 0x40 ? cpu->a - adjust : cpu->a + adjust; // Adjust A based on N flag
+    cpu->f = (cpu->a == 0 ? cpu->f | 0x80 : cpu->f & ~0x80); // Set or clear Z flag
+    cpu->f &= ~0x20; // Clear H flag
+    p_instr("DAA: A=0x%02X, Adjust=0x%02X", cpu->a, adjust);
+}
+
+static void SCF(CPU *cpu, Memory *memory, Register unused1, Register unused2) {
+    (void)memory; (void)unused1; (void)unused2;
+
+    cpu->f = (cpu->f & ~0x60) | 0x10; // Set CY, clear N and H
+    p_instr("SCF: CY set, N and H cleared");
+}
+
+static void CPL(CPU *cpu, Memory *memory, Register unused1, Register unused2) {
+    (void)memory; (void)unused1; (void)unused2;
+
+    cpu->a = ~cpu->a;
+    cpu->f |= 0x60; // Set N and H flags
+    p_instr("CPL: A=0x%02X (complemented)", cpu->a);
+}
+
+static void CCF(CPU *cpu, Memory *memory, Register unused1, Register unused2) {
+    (void)memory; (void)unused1; (void)unused2;
+
+    uint8_t carryFlag = cpu->f & 0x10;
+    cpu->f = (cpu->f & ~0x60) | (!carryFlag << 4); // Toggle CY, clear N and H
+    p_instr("CCF: CY=%d (toggled)", !carryFlag);
+}
+
+static void setFlagsAdd(CPU *cpu, uint8_t result, uint8_t operand, uint8_t carry) {
+    cpu->f = (result == 0 ? 0x80 : 0);  // Set Z flag if result is zero
+    cpu->f |= (result < operand + carry) ? 0x10 : 0; // Set C flag if overflow
+    cpu->f |= (((cpu->a & 0xF) + (operand & 0xF) + carry) & 0x10) ? 0x20 : 0; // Set H flag if half-carry
+}
+
+static void ADD_A_r(CPU *cpu, Memory *memory, Register reg, Register unused) {
+    (void)memory; (void)unused;
+    uint8_t *regValue = getRegister(cpu, reg);
+    if (regValue) {
+        uint8_t operand = *regValue;
+        uint8_t result = cpu->a + operand;
+        setFlagsAdd(cpu, result, operand, 0);
+        cpu->a = result;
+        p_instr("ADD A, %s: 0x%02X", getRegisterName(reg), cpu->a);
+    }
+}
+
+static void ADD_A_mHL(CPU *cpu, Memory *memory, Register unused1, Register unused2) {
+    (void)unused1; (void)unused2;
+    uint16_t address = (cpu->h << 8) | cpu->l;
+    uint8_t operand = readByte(memory, address);
+    uint8_t result = cpu->a + operand;
+    setFlagsAdd(cpu, result, operand, 0);
+    cpu->a = result;
+    p_instr("ADD A, (HL): 0x%02X", cpu->a);
+}
+
+static void ADD_A_d8(CPU *cpu, Memory *memory, Register unused1, Register unused2) {
+    (void)unused1; (void)unused2;
+    uint8_t operand = readByte(memory, cpu->pc++);
+    uint8_t result = cpu->a + operand;
+    setFlagsAdd(cpu, result, operand, 0);
+    cpu->a = result;
+    p_instr("ADD A, d8: 0x%02X", cpu->a);
+}
+
+static void ADC_A_r(CPU *cpu, Memory *memory, Register reg, Register unused) {
+    (void)memory; (void)unused;
+    uint8_t *regValue = getRegister(cpu, reg);
+    if (regValue) {
+        uint8_t operand = *regValue;
+        uint8_t carry = (cpu->f & 0x10) ? 1 : 0;
+        uint8_t result = cpu->a + operand + carry;
+        setFlagsAdd(cpu, result, operand, carry);
+        cpu->a = result;
+        p_instr("ADC A, %s: 0x%02X", getRegisterName(reg), cpu->a);
+    }
+}
+
+static void ADC_A_mHL(CPU *cpu, Memory *memory, Register unused1, Register unused2) {
+    (void)unused1; (void)unused2;
+    uint16_t address = (cpu->h << 8) | cpu->l;
+    uint8_t operand = readByte(memory, address);
+    uint8_t carry = (cpu->f & 0x10) ? 1 : 0;
+    uint8_t result = cpu->a + operand + carry;
+    setFlagsAdd(cpu, result, operand, carry);
+    cpu->a = result;
+    p_instr("ADC A, (HL): 0x%02X", cpu->a);
+}
+
+
+static void ADC_A_d8(CPU *cpu, Memory *memory, Register unused1, Register unused2) {
+    (void)unused1; (void)unused2;
+    uint8_t operand = readByte(memory, cpu->pc++);
+    uint8_t carry = (cpu->f & 0x10) ? 1 : 0;
+    uint8_t result = cpu->a + operand + carry;
+    setFlagsAdd(cpu, result, operand, carry);
+    cpu->a = result;
+    p_instr("ADC A, d8: 0x%02X", cpu->a);
+}
+
+static void setFlagsSub(CPU *cpu, uint8_t result, uint8_t operand, uint8_t carry) {
+    cpu->f = (result == 0 ? 0x80 : 0);              // Set Z flag if result is zero
+    cpu->f |= 0x40;                                 // Set N flag (subtraction)
+    cpu->f |= (operand + carry > cpu->a) ? 0x10 : 0; // Set C flag if borrow occurred
+    cpu->f |= (((cpu->a & 0xF) - (operand & 0xF) - carry) & 0x10) ? 0x20 : 0; // Set H flag if half-borrow
+}
+
+static void SUB_A_r(CPU *cpu, Memory *memory, Register reg, Register unused) {
+    (void)memory; (void)unused;
+    uint8_t *regValue = getRegister(cpu, reg);
+    if (regValue) {
+        uint8_t operand = *regValue;
+        uint8_t result = cpu->a - operand;
+        setFlagsSub(cpu, result, operand, 0);
+        cpu->a = result;
+        p_instr("SUB A, %s: 0x%02X", getRegisterName(reg), cpu->a);
+    }
+}
+
+static void SUB_A_mHL(CPU *cpu, Memory *memory, Register unused1, Register unused2) {
+    (void)unused1; (void)unused2;
+    uint16_t address = (cpu->h << 8) | cpu->l;
+    uint8_t operand = readByte(memory, address);
+    uint8_t result = cpu->a - operand;
+    setFlagsSub(cpu, result, operand, 0);
+    cpu->a = result;
+    p_instr("SUB A, (HL): 0x%02X", cpu->a);
+}
+
+static void SUB_A_d8(CPU *cpu, Memory *memory, Register unused1, Register unused2) {
+    (void)unused1; (void)unused2;
+    uint8_t operand = readByte(memory, cpu->pc++);
+    uint8_t result = cpu->a - operand;
+    setFlagsSub(cpu, result, operand, 0);
+    cpu->a = result;
+    p_instr("SUB A, d8: 0x%02X", cpu->a);
+}
+
+static void SBC_A_r(CPU *cpu, Memory *memory, Register reg, Register unused) {
+    (void)memory; (void)unused;
+    uint8_t *regValue = getRegister(cpu, reg);
+    if (regValue) {
+        uint8_t operand = *regValue;
+        uint8_t carry = (cpu->f & 0x10) ? 1 : 0;
+        uint8_t result = cpu->a - operand - carry;
+        setFlagsSub(cpu, result, operand, carry);
+        cpu->a = result;
+        p_instr("SBC A, %s: 0x%02X", getRegisterName(reg), cpu->a);
+    }
+}
+
+static void SBC_A_mHL(CPU *cpu, Memory *memory, Register unused1, Register unused2) {
+    (void)unused1; (void)unused2;
+    uint16_t address = (cpu->h << 8) | cpu->l;
+    uint8_t operand = readByte(memory, address);
+    uint8_t carry = (cpu->f & 0x10) ? 1 : 0;
+    uint8_t result = cpu->a - operand - carry;
+    setFlagsSub(cpu, result, operand, carry);
+    cpu->a = result;
+    p_instr("SBC A, (HL): 0x%02X", cpu->a);
+}
+
+static void SBC_A_d8(CPU *cpu, Memory *memory, Register unused1, Register unused2) {
+    (void)unused1; (void)unused2;
+    uint8_t operand = readByte(memory, cpu->pc++);
+    uint8_t carry = (cpu->f & 0x10) ? 1 : 0;
+    uint8_t result = cpu->a - operand - carry;
+    setFlagsSub(cpu, result, operand, carry);
+    cpu->a = result;
+    p_instr("SBC A, d8: 0x%02X", cpu->a);
+}
+
 
 // Opcode table with metadata
 // format: instr | REG_1 | REG2 | cycles 
@@ -279,6 +527,64 @@ Instruction opcodeTable[256] = {
     [0xF5] = { PUSH_rr, REG_A, REG_F, 16 },                 // PUSH AF
     [0xF8] = { LD_HL_SP_plus_s8, REG_NONE, REG_NONE, 12 },  // LD HL, SP+s8
     [0xF9] = { LD_SP_HL, REG_NONE, REG_NONE, 8 },           // LD SP, HL
+
+    // 8bit arithmetic/logical instructions
+    [0x04] = { INC_r, REG_B, REG_NONE, 4 },                 // INC B
+    [0x05] = { DEC_r, REG_B, REG_NONE, 4 },                 // DEC B
+    [0x0C] = { INC_r, REG_C, REG_NONE, 4 },                 // INC C
+    [0x0D] = { DEC_r, REG_C, REG_NONE, 4 },                 // DEC C
+    [0x14] = { INC_r, REG_D, REG_NONE, 4 },                 // INC D
+    [0x15] = { DEC_r, REG_D, REG_NONE, 4 },                 // DEC D
+    [0x1C] = { INC_r, REG_E, REG_NONE, 4 },                 // INC E
+    [0x1D] = { DEC_r, REG_E, REG_NONE, 4 },                 // DEC E
+    [0x24] = { INC_r, REG_H, REG_NONE, 4 },                 // INC H
+    [0x25] = { DEC_r, REG_H, REG_NONE, 4 },                 // DEC H
+    [0x27] = { DAA, REG_NONE, REG_NONE, 4 },                // DAA
+    [0x2C] = { INC_r, REG_L, REG_NONE, 4 },                 // INC L
+    [0x2D] = { DEC_r, REG_L, REG_NONE, 4 },                 // DEC L
+    [0x2F] = { CPL, REG_NONE, REG_NONE, 4 },                // CPL
+    [0x34] = { INC_mHL, REG_NONE, REG_NONE, 12 },           // INC (HL)
+    [0x35] = { DEC_mHL, REG_NONE, REG_NONE, 12 },           // DEC (HL)
+    [0x37] = { SCF, REG_NONE, REG_NONE, 4 },                // SCF
+    [0x3C] = { INC_r, REG_A, REG_NONE, 4 },                 // INC A
+    [0x3D] = { DEC_r, REG_A, REG_NONE, 4 },                 // DEC A
+    [0x3F] = { CCF, REG_NONE, REG_NONE, 4 },                // CCF
+    [0x80] = { ADD_A_r, REG_B, REG_NONE, 4 },               // ADD A, B
+    [0x81] = { ADD_A_r, REG_C, REG_NONE, 4 },               // ADD A, C
+    [0x82] = { ADD_A_r, REG_D, REG_NONE, 4 },               // ADD A, D
+    [0x83] = { ADD_A_r, REG_E, REG_NONE, 4 },               // ADD A, E
+    [0x84] = { ADD_A_r, REG_H, REG_NONE, 4 },               // ADD A, H
+    [0x85] = { ADD_A_r, REG_L, REG_NONE, 4 },               // ADD A, L
+    [0x86] = { ADD_A_mHL, REG_NONE, REG_NONE, 8 },          // ADD A, (HL)
+    [0x87] = { ADD_A_r, REG_A, REG_NONE, 4 },               // ADD A, A
+    [0x88] = { ADC_A_r, REG_B, REG_NONE, 4 },               // ADC A, B
+    [0x89] = { ADC_A_r, REG_C, REG_NONE, 4 },               // ADC A, C
+    [0x8A] = { ADC_A_r, REG_D, REG_NONE, 4 },               // ADC A, D
+    [0x8B] = { ADC_A_r, REG_E, REG_NONE, 4 },               // ADC A, E
+    [0x8C] = { ADC_A_r, REG_H, REG_NONE, 4 },               // ADC A, H
+    [0x8D] = { ADC_A_r, REG_L, REG_NONE, 4 },               // ADC A, L
+    [0x8E] = { ADC_A_mHL, REG_NONE, REG_NONE, 8 },          // ADC A, (HL)
+    [0x8F] = { ADC_A_r, REG_A, REG_NONE, 4 },               // ADC A, A
+    [0x90] = { SUB_A_r, REG_B, REG_NONE, 4 },               // SUB A, B
+    [0x91] = { SUB_A_r, REG_C, REG_NONE, 4 },               // SUB A, C
+    [0x92] = { SUB_A_r, REG_D, REG_NONE, 4 },               // SUB A, D
+    [0x93] = { SUB_A_r, REG_E, REG_NONE, 4 },               // SUB A, E
+    [0x94] = { SUB_A_r, REG_H, REG_NONE, 4 },               // SUB A, H
+    [0x95] = { SUB_A_r, REG_L, REG_NONE, 4 },               // SUB A, L
+    [0x96] = { SUB_A_mHL, REG_NONE, REG_NONE, 8 },          // SUB A, (HL)
+    [0x97] = { SUB_A_r, REG_A, REG_NONE, 4 },               // SUB A, A
+    [0x98] = { SBC_A_r, REG_B, REG_NONE, 4 },               // SBC A, B
+    [0x99] = { SBC_A_r, REG_C, REG_NONE, 4 },               // SBC A, C
+    [0x9A] = { SBC_A_r, REG_D, REG_NONE, 4 },               // SBC A, D
+    [0x9B] = { SBC_A_r, REG_E, REG_NONE, 4 },               // SBC A, E
+    [0x9C] = { SBC_A_r, REG_H, REG_NONE, 4 },               // SBC A, H
+    [0x9D] = { SBC_A_r, REG_L, REG_NONE, 4 },               // SBC A, L
+    [0x9E] = { SBC_A_mHL, REG_NONE, REG_NONE, 8 },          // SBC A, (HL)
+    [0x9F] = { SBC_A_r, REG_A, REG_NONE, 4 },               // SBC A, A
+    [0xC6] = { ADD_A_d8, REG_NONE, REG_NONE, 8 },           // ADD A, d8
+    [0xCE] = { ADC_A_d8, REG_NONE, REG_NONE, 8 },          // ADC A, d8
+    [0xD6] = { SUB_A_d8, REG_NONE, REG_NONE, 8 },           // SUB A, d8
+    [0xDE] = { SBC_A_d8, REG_NONE, REG_NONE, 8 }            // SBC A, d8
 };
 
 void initCPU(CPU *cpu) {
