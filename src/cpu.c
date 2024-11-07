@@ -477,6 +477,67 @@ static void XOR_A_d8(CPU *cpu, Memory *memory, Register unused1, Register unused
     p_instr("XOR A, d8: 0x%02X", cpu->a);
 }
 
+static void setFlagsOr(CPU *cpu, uint8_t result) {
+    cpu->f = (result == 0 ? 0x80 : 0x00);  // Set Z flag if result is zero
+}
+
+static void setFlagsCp(CPU *cpu, uint8_t a, uint8_t operand) {
+    uint8_t result = a - operand;
+    cpu->f = 0x40;  // Set N flag
+    if (result == 0) cpu->f |= 0x80;  // Set Z flag
+    if ((a & 0x0F) < (operand & 0x0F)) cpu->f |= 0x20;  // Set H flag
+    if (a < operand) cpu->f |= 0x10;  // Set C flag
+}
+
+static void OR_A_r(CPU *cpu, Memory *memory, Register reg) {
+    (void)memory;
+    uint8_t *regValue = getRegister(cpu, reg);
+    if (regValue) {
+        cpu->a |= *regValue;
+        setFlagsOr(cpu, cpu->a);
+        p_instr("OR A, %s: 0x%02X", getRegisterName(reg), cpu->a);
+    }
+}
+
+static void OR_A_mHL(CPU *cpu, Memory *memory, Register unused1, Register unused2) {
+    (void)unused1; (void)unused2;
+    uint16_t address = (cpu->h << 8) | cpu->l;
+    cpu->a |= readByte(memory, address);
+    setFlagsOr(cpu, cpu->a);
+    p_instr("OR A, (HL): 0x%02X", cpu->a);
+}
+
+static void OR_A_d8(CPU *cpu, Memory *memory, Register unused1, Register unused2) {
+    (void)unused1; (void)unused2;
+    cpu->a |= readByte(memory, cpu->pc++);
+    setFlagsOr(cpu, cpu->a);
+    p_instr("OR A, d8: 0x%02X", cpu->a);
+}
+
+static void CP_A_r(CPU *cpu, Memory *memory, Register reg) {
+    (void)memory;
+    uint8_t *regValue = getRegister(cpu, reg);
+    if (regValue) {
+        setFlagsCp(cpu, cpu->a, *regValue);
+        p_instr("CP A, %s: A=0x%02X, operand=0x%02X", getRegisterName(reg), cpu->a, *regValue);
+    }
+}
+
+static void CP_A_mHL(CPU *cpu, Memory *memory, Register unused1, Register unused2) {
+    (void)unused1; (void)unused2;
+    uint16_t address = (cpu->h << 8) | cpu->l;
+    uint8_t value = readByte(memory, address);
+    setFlagsCp(cpu, cpu->a, value);
+    p_instr("CP A, (HL): A=0x%02X, operand=0x%02X", cpu->a, value);
+}
+
+static void CP_A_d8(CPU *cpu, Memory *memory, Register unused1, Register unused2) {
+    (void)unused1; (void)unused2;
+    uint8_t value = readByte(memory, cpu->pc++);
+    setFlagsCp(cpu, cpu->a, value);
+    p_instr("CP A, d8: A=0x%02X, operand=0x%02X", cpu->a, value);
+}
+
 
 // Opcode table with metadata
 // format: instr | REG_1 | REG2 | cycles 
@@ -656,12 +717,30 @@ Instruction opcodeTable[256] = {
     [0xAD] = { XOR_A_r, REG_L, REG_NONE, 4 },               // XOR L
     [0xAE] = { XOR_A_mHL, REG_NONE, REG_NONE, 8 },          // XOR (HL)
     [0xAF] = { XOR_A_r, REG_A, REG_NONE, 4 },               // XOR A
+    [0xB0] = { OR_A_r, REG_B, REG_NONE, 4 },                // OR B
+    [0xB1] = { OR_A_r, REG_C, REG_NONE, 4 },                // OR C
+    [0xB2] = { OR_A_r, REG_D, REG_NONE, 4 },                // OR D
+    [0xB3] = { OR_A_r, REG_E, REG_NONE, 4 },                // OR E
+    [0xB4] = { OR_A_r, REG_H, REG_NONE, 4 },                // OR H
+    [0xB5] = { OR_A_r, REG_L, REG_NONE, 4 },                // OR L
+    [0xB6] = { OR_A_mHL, REG_NONE, REG_NONE, 8 },           // OR (HL)
+    [0xB7] = { OR_A_r, REG_A, REG_NONE, 4 },                // OR A
+    [0xB8] = { CP_A_r, REG_B, REG_NONE, 4 },                // CP B
+    [0xB9] = { CP_A_r, REG_C, REG_NONE, 4 },                // CP C
+    [0xBA] = { CP_A_r, REG_D, REG_NONE, 4 },                // CP D
+    [0xBB] = { CP_A_r, REG_E, REG_NONE, 4 },                // CP E
+    [0xBC] = { CP_A_r, REG_H, REG_NONE, 4 },                // CP H
+    [0xBD] = { CP_A_r, REG_L, REG_NONE, 4 },                // CP L
+    [0xBE] = { CP_A_mHL, REG_NONE, REG_NONE, 8 },           // CP (HL)
+    [0xBF] = { CP_A_r, REG_A, REG_NONE, 4 },                // CP A
     [0xC6] = { ADD_A_d8, REG_NONE, REG_NONE, 8 },           // ADD A, d8
     [0xCE] = { ADC_A_d8, REG_NONE, REG_NONE, 8 },           // ADC A, d8
     [0xD6] = { SUB_A_d8, REG_NONE, REG_NONE, 8 },           // SUB A, d8
     [0xDE] = { SBC_A_d8, REG_NONE, REG_NONE, 8 },           // SBC A, d8
     [0xE6] = { AND_A_d8, REG_NONE, REG_NONE, 8 },           // AND d8
-    [0xEE] = { XOR_A_d8, REG_NONE, REG_NONE, 8 }            // XOR d8
+    [0xEE] = { XOR_A_d8, REG_NONE, REG_NONE, 8 },           // XOR d8
+    [0xF6] = { OR_A_d8, REG_NONE, REG_NONE, 8 },            // OR d8
+    [0xFE] = { CP_A_d8, REG_NONE, REG_NONE, 8 }             // CP d8
 };
 
 void initCPU(CPU *cpu) {
