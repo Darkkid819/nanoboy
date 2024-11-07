@@ -418,6 +418,65 @@ static void SBC_A_d8(CPU *cpu, Memory *memory, Register unused1, Register unused
     p_instr("SBC A, d8: 0x%02X", cpu->a);
 }
 
+static void setFlagsAnd(CPU *cpu, uint8_t result) {
+    cpu->f = (result == 0 ? 0x80 : 0x00);  // Set Z flag if result is zero
+    cpu->f |= 0x20;                        // Set H flag
+}
+
+static void setFlagsXor(CPU *cpu, uint8_t result) {
+    cpu->f = (result == 0 ? 0x80 : 0x00);  // Set Z flag if result is zero
+}
+
+static void AND_A_r(CPU *cpu, Memory *memory, Register reg, Register unused) {
+    (void)memory; (void)unused;
+    uint8_t *regValue = getRegister(cpu, reg);
+    if (regValue) {
+        cpu->a &= *regValue;
+        setFlagsAnd(cpu, cpu->a);
+        p_instr("AND A, %s: 0x%02X", getRegisterName(reg), cpu->a);
+    }
+}
+
+static void AND_A_mHL(CPU *cpu, Memory *memory, Register unused1, Register unused2) {
+    (void)unused1; (void)unused2;
+    uint16_t address = (cpu->h << 8) | cpu->l;
+    cpu->a &= readByte(memory, address);
+    setFlagsAnd(cpu, cpu->a);
+    p_instr("AND A, (HL): 0x%02X", cpu->a);
+}
+
+static void AND_A_d8(CPU *cpu, Memory *memory, Register unused1, Register unused2) {
+    (void)unused1; (void)unused2;
+    cpu->a &= readByte(memory, cpu->pc++);
+    setFlagsAnd(cpu, cpu->a);
+    p_instr("AND A, d8: 0x%02X", cpu->a);
+}
+
+static void XOR_A_r(CPU *cpu, Memory *memory, Register reg, Register unused) {
+    (void)memory; (void)unused;
+    uint8_t *regValue = getRegister(cpu, reg);
+    if (regValue) {
+        cpu->a ^= *regValue;
+        setFlagsXor(cpu, cpu->a);
+        p_instr("XOR A, %s: 0x%02X", getRegisterName(reg), cpu->a);
+    }
+}
+
+static void XOR_A_mHL(CPU *cpu, Memory *memory, Register unused1, Register unused2) {
+    (void)unused1; (void)unused2;
+    uint16_t address = (cpu->h << 8) | cpu->l;
+    cpu->a ^= readByte(memory, address);
+    setFlagsXor(cpu, cpu->a);
+    p_instr("XOR A, (HL): 0x%02X", cpu->a);
+}
+
+static void XOR_A_d8(CPU *cpu, Memory *memory, Register unused1, Register unused2) {
+    (void)unused1; (void)unused2;
+    cpu->a ^= readByte(memory, cpu->pc++);
+    setFlagsXor(cpu, cpu->a);
+    p_instr("XOR A, d8: 0x%02X", cpu->a);
+}
+
 
 // Opcode table with metadata
 // format: instr | REG_1 | REG2 | cycles 
@@ -581,10 +640,28 @@ Instruction opcodeTable[256] = {
     [0x9D] = { SBC_A_r, REG_L, REG_NONE, 4 },               // SBC A, L
     [0x9E] = { SBC_A_mHL, REG_NONE, REG_NONE, 8 },          // SBC A, (HL)
     [0x9F] = { SBC_A_r, REG_A, REG_NONE, 4 },               // SBC A, A
+    [0xA0] = { AND_A_r, REG_B, REG_NONE, 4 },               // AND B
+    [0xA1] = { AND_A_r, REG_C, REG_NONE, 4 },               // AND C
+    [0xA2] = { AND_A_r, REG_D, REG_NONE, 4 },               // AND D
+    [0xA3] = { AND_A_r, REG_E, REG_NONE, 4 },               // AND E
+    [0xA4] = { AND_A_r, REG_H, REG_NONE, 4 },               // AND H
+    [0xA5] = { AND_A_r, REG_L, REG_NONE, 4 },               // AND L
+    [0xA6] = { AND_A_mHL, REG_NONE, REG_NONE, 8 },          // AND (HL)
+    [0xA7] = { AND_A_r, REG_A, REG_NONE, 4 },               // AND A
+    [0xA8] = { XOR_A_r, REG_B, REG_NONE, 4 },               // XOR B
+    [0xA9] = { XOR_A_r, REG_C, REG_NONE, 4 },               // XOR C
+    [0xAA] = { XOR_A_r, REG_D, REG_NONE, 4 },               // XOR D
+    [0xAB] = { XOR_A_r, REG_E, REG_NONE, 4 },               // XOR E
+    [0xAC] = { XOR_A_r, REG_H, REG_NONE, 4 },               // XOR H
+    [0xAD] = { XOR_A_r, REG_L, REG_NONE, 4 },               // XOR L
+    [0xAE] = { XOR_A_mHL, REG_NONE, REG_NONE, 8 },          // XOR (HL)
+    [0xAF] = { XOR_A_r, REG_A, REG_NONE, 4 },               // XOR A
     [0xC6] = { ADD_A_d8, REG_NONE, REG_NONE, 8 },           // ADD A, d8
-    [0xCE] = { ADC_A_d8, REG_NONE, REG_NONE, 8 },          // ADC A, d8
+    [0xCE] = { ADC_A_d8, REG_NONE, REG_NONE, 8 },           // ADC A, d8
     [0xD6] = { SUB_A_d8, REG_NONE, REG_NONE, 8 },           // SUB A, d8
-    [0xDE] = { SBC_A_d8, REG_NONE, REG_NONE, 8 }            // SBC A, d8
+    [0xDE] = { SBC_A_d8, REG_NONE, REG_NONE, 8 },           // SBC A, d8
+    [0xE6] = { AND_A_d8, REG_NONE, REG_NONE, 8 },           // AND d8
+    [0xEE] = { XOR_A_d8, REG_NONE, REG_NONE, 8 }            // XOR d8
 };
 
 void initCPU(CPU *cpu) {
