@@ -489,8 +489,8 @@ static void setFlagsCp(CPU *cpu, uint8_t a, uint8_t operand) {
     if (a < operand) cpu->f |= 0x10;  // Set C flag
 }
 
-static void OR_A_r(CPU *cpu, Memory *memory, Register reg) {
-    (void)memory;
+static void OR_A_r(CPU *cpu, Memory *memory, Register reg, Register unused) {
+    (void)memory; (void)unused;
     uint8_t *regValue = getRegister(cpu, reg);
     if (regValue) {
         cpu->a |= *regValue;
@@ -514,8 +514,8 @@ static void OR_A_d8(CPU *cpu, Memory *memory, Register unused1, Register unused2
     p_instr("OR A, d8: 0x%02X", cpu->a);
 }
 
-static void CP_A_r(CPU *cpu, Memory *memory, Register reg) {
-    (void)memory;
+static void CP_A_r(CPU *cpu, Memory *memory, Register reg, Register unused) {
+    (void)memory; (void)unused;
     uint8_t *regValue = getRegister(cpu, reg);
     if (regValue) {
         setFlagsCp(cpu, cpu->a, *regValue);
